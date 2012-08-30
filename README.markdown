@@ -75,10 +75,15 @@ See [dedicated page](https://github.com/nicolasff/phpredis/blob/master/arrays.ma
 Enabling SSL
 ============
 
-To enable SSL communications, add the following line to your php.ini:
+To enable SSL communications, add the following line to your php.ini: 
 redis.use_ssl=1
 
-Additionally, if you do not want to enable SSL globally, but on a per-connection basis, you can add  ssl: or ssl:// to the beginning of the host name.
+You will also need to enable the PHP SSL extension, by uncommenting the following line in your php.ini: 
+extension=php_openssl.dll 
+  or 
+extension=openssl.so
+
+Additionally, if you do not want to enable SSL globally, but on a per-connection basis, you can add ssl: or ssl:// to the beginning of the host name.
 
 Error handling
 ==============
