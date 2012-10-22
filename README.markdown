@@ -9,7 +9,7 @@ The phpredis extension provides an API for communicating with the SSL enhanced v
 
 This code has been developed and maintained by Owlient from November 2009 to March 2011.
 
-You can send comments, patches, questions [here on github](https://github.com/bbroerman/ssl-phpredis/issues) or to bbroerman@tritonmedia.com
+You can send comments, patches, questions [here on github](https://github.com/bbroerman/ssl-phpredis/issues) or to bbroerman@bbroerman.net
 
 
 Installing/Configuring
