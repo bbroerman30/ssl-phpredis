@@ -35,7 +35,7 @@ ra_load_hosts(RedisArray *ra, HashTable *hosts TSRMLS_DC)
 	int count = zend_hash_num_elements(hosts);
 	char *host, *p;
 	short port;
-	zval **zpData, z_cons, *z_args, z_ret;
+	zval **zpData, z_cons, z_ret;
 	RedisSock *redis_sock  = NULL;
 
 	/* function calls on the Redis object */
@@ -100,6 +100,7 @@ void ra_init_function_table(RedisArray *ra) {
 	add_assoc_bool(ra->z_pure_cmds, "SUNION", 1);
 	add_assoc_bool(ra->z_pure_cmds, "HVALS", 1);
 	add_assoc_bool(ra->z_pure_cmds, "TYPE", 1);
+	add_assoc_bool(ra->z_pure_cmds, "EXISTS", 1);
 	add_assoc_bool(ra->z_pure_cmds, "LINDEX", 1);
 	add_assoc_bool(ra->z_pure_cmds, "SCARD", 1);
 	add_assoc_bool(ra->z_pure_cmds, "LLEN", 1);
@@ -536,7 +537,6 @@ ra_index_keys(zval *z_pairs, zval *z_redis TSRMLS_DC) {
 void
 ra_index_key(const char *key, int key_len, zval *z_redis TSRMLS_DC) {
 
-	int i;
 	zval z_fun_sadd, z_ret, *z_args[2];
 	MAKE_STD_ZVAL(z_args[0]);
 	MAKE_STD_ZVAL(z_args[1]);
@@ -740,8 +740,7 @@ ra_get_key_type(zval *z_redis, const char *key, int key_len, zval *z_from, long 
 static void
 ra_remove_from_index(zval *z_redis, const char *key, int key_len TSRMLS_DC) {
 
-	int i;
-	zval z_fun_get, z_fun_srem, z_ret, *z_args[2];
+	zval z_fun_srem, z_ret, *z_args[2];
 
 	/* run SREM on source index */
 	ZVAL_STRINGL(&z_fun_srem, "SREM", 4, 0);
@@ -815,7 +814,6 @@ ra_move_zset(const char *key, int key_len, zval *z_from, zval *z_to, long ttl TS
 	unsigned int val_len;
 	int i;
 	unsigned long idx;
-	int type;
 	
 	/* run ZRANGE key 0 -1 WITHSCORES on source */
 	ZVAL_STRINGL(&z_fun_zrange, "ZRANGE", 6, 0);
@@ -1107,24 +1105,37 @@ ra_move_key(const char *key, int key_len, zval *z_from, zval *z_to TSRMLS_DC) {
 }
 
 /* callback with the current progress, with hostname and count */
-static void zval_rehash_callback(zval *z_cb, const char *hostname, long count TSRMLS_DC) {
+static void zval_rehash_callback(zend_fcall_info *z_cb, zend_fcall_info_cache *z_cb_cache,
+	const char *hostname, long count TSRMLS_DC) {
 
-	zval z_ret, *z_args[2];
+	zval *z_ret = NULL, **z_args[2];
+	zval *z_host, *z_count;
+
+	z_cb->retval_ptr_ptr = &z_ret;
+	z_cb->params = &z_args;
+	z_cb->param_count = 2;
+	z_cb->no_separation = 0;
 
 	/* run cb(hostname, count) */
-	MAKE_STD_ZVAL(z_args[0]);
-	ZVAL_STRING(z_args[0], hostname, 0);
-	MAKE_STD_ZVAL(z_args[1]);
-	ZVAL_LONG(z_args[1], count);
-	call_user_function(EG(function_table), NULL, z_cb, &z_ret, 2, z_args TSRMLS_CC);
+	MAKE_STD_ZVAL(z_host);
+	ZVAL_STRING(z_host, hostname, 0);
+	z_args[0] = &z_host;
+	MAKE_STD_ZVAL(z_count);
+	ZVAL_LONG(z_count, count);
+	z_args[1] = &z_count;
+
+	zend_call_function(z_cb, z_cb_cache TSRMLS_CC);
 
 	/* cleanup */
-	efree(z_args[0]);
-	efree(z_args[1]);
+	efree(z_host);
+	efree(z_count);
+	if(z_ret)
+		efree(z_ret);
 }
 
 static void
-ra_rehash_server(RedisArray *ra, zval *z_redis, const char *hostname, zend_bool b_index, zval *z_cb TSRMLS_DC) {
+ra_rehash_server(RedisArray *ra, zval *z_redis, const char *hostname, zend_bool b_index,
+		zend_fcall_info *z_cb, zend_fcall_info_cache *z_cb_cache TSRMLS_DC) {
 
 	char **keys;
 	int *key_lens;
@@ -1140,8 +1151,8 @@ ra_rehash_server(RedisArray *ra, zval *z_redis, const char *hostname, zend_bool 
 	}
 
 	/* callback */
-	if(z_cb) {
-		zval_rehash_callback(z_cb, hostname, count TSRMLS_CC);
+	if(z_cb && z_cb_cache) {
+		zval_rehash_callback(z_cb, z_cb_cache, hostname, count TSRMLS_CC);
 	}
 
 	/* for each key, redistribute */
@@ -1165,7 +1176,7 @@ ra_rehash_server(RedisArray *ra, zval *z_redis, const char *hostname, zend_bool 
 }
 
 void
-ra_rehash(RedisArray *ra, zval *z_cb TSRMLS_DC) {
+ra_rehash(RedisArray *ra, zend_fcall_info *z_cb, zend_fcall_info_cache *z_cb_cache TSRMLS_DC) {
 
 	int i;
 
@@ -1174,7 +1185,7 @@ ra_rehash(RedisArray *ra, zval *z_cb TSRMLS_DC) {
 		return;	/* TODO: compare the two rings for equality */
 
 	for(i = 0; i < ra->prev->count; ++i) {
-		ra_rehash_server(ra, ra->prev->redis[i], ra->prev->hosts[i], ra->index, z_cb TSRMLS_CC);
+		ra_rehash_server(ra, ra->prev->redis[i], ra->prev->hosts[i], ra->index, z_cb, z_cb_cache TSRMLS_CC);
 	}
 }
 

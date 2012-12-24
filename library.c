@@ -1,3 +1,6 @@
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include "common.h"
 #include "php_network.h"
 #include <sys/types.h>
@@ -7,8 +10,9 @@
 #endif
 #include <ext/standard/php_smart_str.h>
 #include <ext/standard/php_var.h>
-
+#ifdef HAVE_REDIS_IGBINARY
 #include "igbinary/igbinary.h"
+#endif
 #include <zend_exceptions.h>
 #include "php_redis.h"
 #include "library.h"
@@ -41,7 +45,7 @@ PHPAPI int redis_check_eof(RedisSock *redis_sock TSRMLS_DC)
     for (; eof; count++) {
         if((MULTI == redis_sock->mode) || redis_sock->watching || count == 10) { /* too many failures */
 	    if(redis_sock->stream) { /* close stream if still here */
-                php_stream_close(redis_sock->stream);
+                redis_stream_close(redis_sock TSRMLS_CC);
                 redis_sock->stream = NULL;
 				redis_sock->mode   = ATOMIC;
                 redis_sock->status = REDIS_SOCK_STATUS_FAILED;
@@ -51,7 +55,7 @@ PHPAPI int redis_check_eof(RedisSock *redis_sock TSRMLS_DC)
 	    return -1;
 	}
 	if(redis_sock->stream) { /* close existing stream before reconnecting */
-            php_stream_close(redis_sock->stream);
+            redis_stream_close(redis_sock TSRMLS_CC);
             redis_sock->stream = NULL;
 			redis_sock->mode   = ATOMIC;
             redis_sock->watching = 0;
@@ -168,6 +172,7 @@ PHPAPI char *redis_sock_read(RedisSock *redis_sock, int *buf_len TSRMLS_DC)
 {
     char inbuf[1024];
     char *resp = NULL;
+    size_t err_len;
 
     if(-1 == redis_check_eof(redis_sock TSRMLS_CC)) {
         return NULL;
@@ -185,6 +190,8 @@ PHPAPI char *redis_sock_read(RedisSock *redis_sock, int *buf_len TSRMLS_DC)
 
     switch(inbuf[0]) {
         case '-':
+			err_len = strlen(inbuf+1) - 2;
+			redis_sock_set_err(redis_sock, inbuf+1, err_len);
 			/* stale data */
 			if(memcmp(inbuf + 1, "-ERR SYNC ", 10) == 0) {
 				zend_throw_exception(redis_exception_ce, "SYNC with master in progress", 0 TSRMLS_CC);
@@ -308,8 +315,7 @@ redis_cmd_format_static(char **ret, char *keyword, char *format, ...) {
 			case 'f':
 			case 'F': {
 				double d = va_arg(ap, double);
-				dbl_str = _php_math_number_format(d, 8, '.', '\x00');
-				dbl_len = strlen(dbl_str);
+				REDIS_DOUBLE_TO_STRING(dbl_str, dbl_len, d)
 				smart_str_append_long(&buf, dbl_len);
 				smart_str_appendl(&buf, _NL, sizeof(_NL) - 1);
 				smart_str_appendl(&buf, dbl_str, dbl_len);
@@ -377,8 +383,7 @@ redis_cmd_format(char **ret, char *format, ...) {
 				case 'F':
 				case 'f': {
 					double d = va_arg(ap, double);
-					dbl_str = _php_math_number_format(d, 8, '.', '\x00');
-					dbl_len = strlen(dbl_str);
+					REDIS_DOUBLE_TO_STRING(dbl_str, dbl_len, d)
 					smart_str_append_long(&buf, dbl_len);
 					smart_str_appendl(&buf, _NL, sizeof(_NL) - 1);
 					smart_str_appendl(&buf, dbl_str, dbl_len);
@@ -892,8 +897,8 @@ PHPAPI int redis_sock_connect(RedisSock *redis_sock TSRMLS_DC)
 	    	if( use_ssl == 1 ) {
 	    	  host_len = spprintf(&host, 0, "ssl://%s:%d", redis_sock->host + str_offset, redis_sock->port);
 	    	} else {
-	    	  host_len = spprintf(&host, 0, "%s:%d", redis_sock->host, redis_sock->port);
-	    	}
+	    host_len = spprintf(&host, 0, "%s:%d", redis_sock->host, redis_sock->port);
+    }
     }
 
     if (redis_sock->persistent) {
@@ -1324,11 +1329,13 @@ redis_serialize(RedisSock *redis_sock, zval *z, char **val, int *val_len TSRMLS_
 			return 1;
 
 		case REDIS_SERIALIZER_IGBINARY:
+#ifdef HAVE_REDIS_IGBINARY
 			if(igbinary_serialize(&val8, (size_t *)&sz, z TSRMLS_CC) == 0) { /* ok */
 				*val = (char*)val8;
 				*val_len = (int)sz;
 				return 1;
 			}
+#endif
 			return 0;
 	}
 	return 0;
@@ -1369,6 +1376,7 @@ redis_unserialize(RedisSock *redis_sock, const char *val, int val_len, zval **re
 			return ret;
 
 		case REDIS_SERIALIZER_IGBINARY:
+#ifdef HAVE_REDIS_IGBINARY
 			if(!*return_value) {
 				MAKE_STD_ZVAL(*return_value);
 			}
@@ -1376,6 +1384,7 @@ redis_unserialize(RedisSock *redis_sock, const char *val, int val_len, zval **re
 				return 1;
 			}
 			efree(*return_value);
+#endif
 			return 0;
 			break;
 	}

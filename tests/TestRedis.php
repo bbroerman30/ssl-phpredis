@@ -7,7 +7,7 @@ echo "Note: these tests might take up to a minute. Don't worry :-)\n";
 class Redis_Test extends TestSuite
 {
 	const HOST = '127.0.0.1';
-	const PORT = 8211;
+	const PORT = 6379;
 	const AUTH = NULL; //replace with a string to use Redis authentication
 
     /**
@@ -18,6 +18,8 @@ class Redis_Test extends TestSuite
     public function setUp()
     {
 	$this->redis = $this->newInstance();
+	$info = $this->redis->info();
+	$this->version = (isset($info['redis_version'])?$info['redis_version']:'0.0.0');
     }
 
 	private function newInstance() {
@@ -42,6 +44,12 @@ class Redis_Test extends TestSuite
     {
         $this->setUp();
         $this->tearDown();
+    }
+
+    public function testMinimumVersion()
+    {
+	// Minimum server version required for tests
+	$this->assertTrue(version_compare($this->version, "2.4.0", "ge"));
     }
 
     public function testPing()
@@ -375,8 +383,14 @@ class Redis_Test extends TestSuite
 
 	$this->redis->incr('key');
 	$this->assertTrue("abc" === $this->redis->get('key'));
+	}
 
-	// incrbyfloat
+    public function testIncrByFloat()
+    {
+	// incrbyfloat is new in 2.6.0
+	if (version_compare($this->version, "2.5.0", "lt")) {
+		$this->markTestSkipped();
+	}
 
 	$this->redis->delete('key');
 
@@ -782,6 +796,23 @@ class Redis_Test extends TestSuite
 
     }
 
+    public function testSortPrefix() {
+	// Make sure that sorting works with a prefix
+        $this->redis->setOption(Redis::OPT_PREFIX, 'some-prefix:');
+        $this->redis->del('some-item');
+        $this->redis->sadd('some-item', 1);
+        $this->redis->sadd('some-item', 2);
+        $this->redis->sadd('some-item', 3);
+
+        $this->assertEquals(array('1','2','3'), $this->redis->sortAsc('some-item'));
+	$this->assertEquals(array('3','2','1'), $this->redis->sortDesc('some-item'));
+	$this->assertEquals(array('1','2','3'), $this->redis->sort('some-item'));
+
+	// Kill our set/prefix
+	$this->redis->del('some-item');
+	$this->redis->setOption(Redis::OPT_PREFIX, '');
+    }
+
     public function testSortAsc() {
 
 	$this->setupSort();
@@ -831,8 +862,14 @@ class Redis_Test extends TestSuite
 	}
 
 	// SORT list → [ghi, def, abc]
-	$this->assertEquals(array_reverse($list), $this->redis->sortAsc('list'));
-	$this->assertEquals(array_reverse($list), $this->redis->sort('list', array('sort' => 'asc')));
+	if (version_compare($this->version, "2.5.0", "lt")) {
+		$this->assertEquals(array_reverse($list), $this->redis->sortAsc('list'));
+		$this->assertEquals(array_reverse($list), $this->redis->sort('list', array('sort' => 'asc')));
+	} else {
+		// TODO rewrite, from 2.6.0 release notes:
+		// SORT now will refuse to sort in numerical mode elements that can't be parsed
+		// as numbers
+	}
 
 	// SORT list ALPHA → [abc, def, ghi]
 	$this->assertEquals($list, $this->redis->sortAscAlpha('list'));
@@ -866,7 +903,13 @@ class Redis_Test extends TestSuite
 	}
 
 	// SORT list → [ghi, abc, def]
-	$this->assertEquals(array_reverse($list), $this->redis->sortDesc('list'));
+	if (version_compare($this->version, "2.5.0", "lt")) {
+		$this->assertEquals(array_reverse($list), $this->redis->sortDesc('list'));
+	} else {
+		// TODO rewrite, from 2.6.0 release notes:
+		// SORT now will refuse to sort in numerical mode elements that can't be parsed
+		// as numbers
+	}
 
 	// SORT list ALPHA → [abc, def, ghi]
 	$this->assertEquals(array('ghi', 'def', 'abc'), $this->redis->sortDescAlpha('list'));
@@ -1563,24 +1606,43 @@ class Redis_Test extends TestSuite
 	    "connected_clients",
 	    "connected_slaves",
 	    "used_memory",
-	    "changes_since_last_save",
-	    "bgsave_in_progress",
-	    "last_save_time",
 	    "total_connections_received",
 	    "total_commands_processed",
 	    "role");
-
+	if (version_compare($this->version, "2.5.0", "lt")) {
+		array_push($keys,
+		    "changes_since_last_save",
+		    "bgsave_in_progress",
+		    "last_save_time"
+		);
+	} else {
+		array_push($keys,
+		    "rdb_changes_since_last_save",
+		    "rdb_bgsave_in_progress",
+		    "rdb_last_save_time"
+		);
+	}
 
 	foreach($keys as $k) {
 	    $this->assertTrue(in_array($k, array_keys($info)));
 	}
+	}
 
-	// INFO COMMANDSTATS
+    public function testInfoCommandStats() {
+
+	// INFO COMMANDSTATS is new in 2.6.0
+	if (version_compare($this->version, "2.5.0", "lt")) {
+		$this->markTestSkipped();
+	}
+
 	$info = $this->redis->info("COMMANDSTATS");
 
-	foreach($info as $k => $value) {
-		$this->assertTrue(strpos($k, 'cmdstat_') !== false);
-    }
+	$this->assertTrue(is_array($info));
+	if (is_array($info)) {
+		foreach($info as $k => $value) {
+			$this->assertTrue(strpos($k, 'cmdstat_') !== false);
+	    }
+	}
     }
 
     public function testSelect() {
@@ -1814,6 +1876,22 @@ class Redis_Test extends TestSuite
 	$this->redis->delete('key2');
 	$this->redis->delete('key3');
 
+	$this->redis->zadd('key1', 2000.1, 'one');
+	$this->redis->zadd('key1', 3000.1, 'two');
+	$this->redis->zadd('key1', 4000.1, 'three');
+
+	$ret = $this->redis->zRange('key1', 0, -1, TRUE);
+	$this->assertTrue(count($ret) === 3);
+	$retValues = array_keys($ret);
+
+	$this->assertTrue(array('one', 'two', 'three') === $retValues);
+
+	// + 0 converts from string to float OR integer
+	$this->assertTrue(is_float($ret['one'] + 0));
+	$this->assertTrue(is_float($ret['two'] + 0));
+	$this->assertTrue(is_float($ret['three'] + 0));
+
+	$this->redis->delete('key1');
 
 	// ZREMRANGEBYRANK
 	$this->redis->zAdd('key1', 1, 'one');
@@ -1959,6 +2037,7 @@ class Redis_Test extends TestSuite
 	$this->redis->hSet('h', 'y', 'not-a-number');
 	$this->assertTrue(FALSE === $this->redis->hIncrBy('h', 'y', 1));
 
+	if (version_compare($this->version, "2.5.0", "ge")) {
 	// hIncrByFloat
 	$this->redis->delete('h');
 	$this->assertTrue(1.5 === $this->redis->hIncrByFloat('h','x', 1.5));
@@ -1967,6 +2046,7 @@ class Redis_Test extends TestSuite
 
 	$this->redis->hset('h','y','not-a-number');
 	$this->assertTrue(FALSE === $this->redis->hIncrByFloat('h', 'y', 1.5));
+	}
 
 	// hmset
 	$this->redis->delete('h');
@@ -2535,7 +2615,7 @@ class Redis_Test extends TestSuite
 
 	    // sorted sets
 	    $ret = $this->redis->multi($mode)
-		    ->delete('zkey1', 'zkey2', 'zkey5')
+			->delete('zkey1', 'zkey2', 'zkey5', 'zInter', 'zUnion')
 		    ->zadd('zkey1', 1, 'zValue1')
 		    ->zadd('zkey1', 5, 'zValue5')
 		    ->zadd('zkey1', 2, 'zValue2')
@@ -2906,6 +2986,11 @@ class Redis_Test extends TestSuite
     }
 
     public function testDumpRestore() {
+
+		if (version_compare($this->version, "2.5.0", "lt")) {
+			$this->markTestSkipped();
+		}
+
     	$this->redis->del('foo');
     	$this->redis->del('bar');
 
@@ -2938,8 +3023,20 @@ class Redis_Test extends TestSuite
     	$this->redis->eval("not-a-lua-script");
 
     	// Now we should have an error
-    	$this->assertTrue(strlen($this->redis->getLastError()) > 0);
-    }
+		$evalError = $this->redis->getLastError();
+		$this->assertTrue(strlen($evalError) > 0);
+
+		// test getLastError with a regular command
+		$this->redis->set('x', 'a');
+		$this->assertFalse($this->redis->incr('x'));
+		$incrError = $this->redis->getLastError();
+		$this->assertTrue($incrError !== $evalError); // error has changed
+		$this->assertTrue(strlen($incrError) > 0);
+
+		// clear error
+		$this->redis->clearLastError();
+		$this->assertTrue($this->redis->getLastError() === NULL);
+	}
 
     // Helper function to compare nested results -- from the php.net array_diff page, I believe
     private function array_diff_recursive($aArray1, $aArray2) {
@@ -2966,6 +3063,11 @@ class Redis_Test extends TestSuite
     }
 
     public function testScript() {
+
+		if (version_compare($this->version, "2.5.0", "lt")) {
+			$this->markTestSkipped();
+		}
+
 		// Flush any scripts we have
 		$this->assertTrue($this->redis->script('flush'));
 
@@ -2980,7 +3082,7 @@ class Redis_Test extends TestSuite
     	// None should exist
 		$result = $this->redis->script('exists', $s1_sha, $s2_sha, $s3_sha);
 		$this->assertTrue(is_array($result) && count($result) == 3);
-		$this->assertTrue(count(array_filter($result)) == 0);
+		$this->assertTrue(is_array($result) && count(array_filter($result)) == 0);
 
 		// Load them up
 		$this->assertTrue($this->redis->script('load', $s1_src) == $s1_sha);
@@ -2989,10 +3091,15 @@ class Redis_Test extends TestSuite
 
 		// They should all exist
 		$result = $this->redis->script('exists', $s1_sha, $s2_sha, $s3_sha);
-		$this->assertTrue(count(array_filter($result)) == 3);
+		$this->assertTrue(is_array($result) && count(array_filter($result)) == 3);
     }
 
     public function testEval() {
+
+		if (version_compare($this->version, "2.5.0", "lt")) {
+			$this->markTestSkipped();
+		}
+
     	// Basic single line response tests
     	$this->assertTrue(1 == $this->redis->eval('return 1'));
     	$this->assertTrue(1.55 == $this->redis->eval("return '1.55'"));
@@ -3060,7 +3167,7 @@ class Redis_Test extends TestSuite
 
 		// Now run our script, and check our values against each other
 		$eval_result = $this->redis->eval($nested_script);
-		$this->assertTrue(count($this->array_diff_recursive($eval_result, $expected)) == 0);
+		$this->assertTrue(is_array($eval_result) && count($this->array_diff_recursive($eval_result, $expected)) == 0);
 
 		/*
 		 * Nested reply wihin a multi/pipeline block
@@ -3076,7 +3183,7 @@ class Redis_Test extends TestSuite
 			$replies = $this->redis->exec();
 
 			foreach($replies as $reply) {
-				$this->assertTrue(count($this->array_diff_recursive($reply, $expected)) == 0);
+				$this->assertTrue(is_array($reply) && count($this->array_diff_recursive($reply, $expected)) == 0);
 			}
 		}
 
@@ -3106,6 +3213,11 @@ class Redis_Test extends TestSuite
     }
 
     public function testEvalSHA() {
+
+		if (version_compare($this->version, "2.5.0", "lt")) {
+			$this->markTestSkipped();
+		}
+
     	// Flush any loaded scripts
     	$this->redis->script('flush');
 
@@ -3199,6 +3311,11 @@ class Redis_Test extends TestSuite
 	}
 
 	public function testTime() {
+
+		if (version_compare($this->version, "2.5.0", "lt")) {
+			$this->markTestSkipped();
+		}
+
 		$time_arr = $this->redis->time();
 		$this->assertTrue(is_array($time_arr) && count($time_arr) == 2 &&
 				          strval(intval($time_arr[0])) === strval($time_arr[0]) &&
@@ -3206,6 +3323,6 @@ class Redis_Test extends TestSuite
 	}
 }
 
-TestSuite::run("Redis_Test");
+exit(TestSuite::run("Redis_Test"));
 
 ?>
