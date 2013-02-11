@@ -9,6 +9,7 @@ This code has been developed and maintained by Owlient from November 2009 to Mar
 
 You can send comments, patches, questions [here on github](https://github.com/bbroerman/ssl-phpredis/issues) or to bbroerman@bbroerman.net
 
+Note, For this plugin to work properly with SSL, it requires an update to PHP. The changes are hosted here: https://github.com/bbroerman30/php-src
 
 # Table of contents
 -----
@@ -108,7 +109,9 @@ extension=php_openssl.dll
   or 
 extension=openssl.so
 
-Additionally, if you do not want to enable SSL globally, but on a per-connection basis, you can add ssl: or ssl:// to the beginning of the host name.
+If you do not want to enable SSL globally, but on a per-connection basis, you can add ssl: or ssl:// to the beginning of the host name.
+
+Finally, For this plugin to work properly with SSL, it requires an update to PHP. The changes are hosted here: https://github.com/bbroerman30/php-src
 
 
 # Classes and methods
@@ -1453,7 +1456,7 @@ _**Description**_: Increments the value of a member from a hash by a given amoun
 ~~~
 $redis->delete('h');
 $redis->hIncrBy('h', 'x', 2); /* returns 2: h[x] = 2 now. */
-$redis->hIncrBy('h', 'x', 1); /* h[x] â†? 2 + 1. Returns 3 */
+$redis->hIncrBy('h', 'x', 1); /* h[x] ï¿½? 2 + 1. Returns 3 */
 ~~~
 
 ### hIncrByFloat
