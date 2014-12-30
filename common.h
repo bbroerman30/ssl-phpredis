@@ -1,8 +1,14 @@
 #include "php.h"
 #include "php_ini.h"
+#include <ext/standard/php_smart_str.h>
 
 #ifndef REDIS_COMMON_H
 #define REDIS_COMMON_H
+
+/* NULL check so Eclipse doesn't go crazy */
+#ifndef NULL
+#define NULL   ((void *) 0)
+#endif
 
 #define redis_sock_name "Redis Socket Buffer"
 #define REDIS_SOCK_STATUS_FAILED 0
@@ -24,21 +30,55 @@
 
 /* reply types */
 typedef enum _REDIS_REPLY_TYPE {
-	TYPE_LINE      = '+',
+    TYPE_EOF       = EOF,
+    TYPE_LINE      = '+',
 	TYPE_INT       = ':',
 	TYPE_ERR       = '-',
 	TYPE_BULK      = '$',
 	TYPE_MULTIBULK = '*'
 } REDIS_REPLY_TYPE;
 
+/* SCAN variants */
+typedef enum _REDIS_SCAN_TYPE {
+    TYPE_SCAN,
+    TYPE_SSCAN,
+    TYPE_HSCAN,
+    TYPE_ZSCAN
+} REDIS_SCAN_TYPE;
+
+/* PUBSUB subcommands */
+typedef enum _PUBSUB_TYPE {
+    PUBSUB_CHANNELS,
+    PUBSUB_NUMSUB,
+    PUBSUB_NUMPAT
+} PUBSUB_TYPE;
+
 /* options */
 #define REDIS_OPT_SERIALIZER		1
 #define REDIS_OPT_PREFIX		    2
+#define REDIS_OPT_READ_TIMEOUT		3
+#define REDIS_OPT_SCAN              4
 
 /* serializers */
 #define REDIS_SERIALIZER_NONE		0
 #define REDIS_SERIALIZER_PHP 		1
 #define REDIS_SERIALIZER_IGBINARY 	2
+
+/* SCAN options */
+#define REDIS_SCAN_NORETRY 0
+#define REDIS_SCAN_RETRY 1
+
+/* GETBIT/SETBIT offset range limits */
+#define BITOP_MIN_OFFSET 0
+#define BITOP_MAX_OFFSET 4294967295
+
+/* Specific error messages we want to throw against */
+#define REDIS_ERR_LOADING_MSG "LOADING Redis is loading the dataset in memory"
+#define REDIS_ERR_LOADING_KW  "LOADING"
+#define REDIS_ERR_AUTH_MSG    "NOAUTH Authentication required."
+#define REDIS_ERR_AUTH_KW     "NOAUTH"
+#define REDIS_ERR_SYNC_MSG    "MASTERDOWN Link with MASTER is down and slave-serve-stale-data is set to 'no'"
+#define REDIS_ERR_SYNC_KW     "MASTERDOWN"
 
 #define IF_MULTI() if(redis_sock->mode == MULTI)
 #define IF_MULTI_OR_ATOMIC() if(redis_sock->mode == MULTI || redis_sock->mode == ATOMIC)\
@@ -46,6 +86,7 @@ typedef enum _REDIS_REPLY_TYPE {
 #define IF_MULTI_OR_PIPELINE() if(redis_sock->mode == MULTI || redis_sock->mode == PIPELINE)
 #define IF_PIPELINE() if(redis_sock->mode == PIPELINE)
 #define IF_NOT_MULTI() if(redis_sock->mode != MULTI)
+#define IF_NOT_ATOMIC() if(redis_sock->mode != ATOMIC)
 #define IF_ATOMIC() if(redis_sock->mode == ATOMIC)
 #define ELSE_IF_MULTI() else if(redis_sock->mode == MULTI) { \
 	if(redis_response_enqueued(redis_sock TSRMLS_CC) == 1) {\
@@ -136,6 +177,21 @@ else if(redis_sock->mode == MULTI) { \
 
 #define REDIS_PROCESS_RESPONSE(function) REDIS_PROCESS_RESPONSE_CLOSURE(function, NULL)
 
+/* Extended SET argument detection */
+#define IS_EX_ARG(a) ((a[0]=='e' || a[0]=='E') && (a[1]=='x' || a[1]=='X') && a[2]=='\0')
+#define IS_PX_ARG(a) ((a[0]=='p' || a[0]=='P') && (a[1]=='x' || a[1]=='X') && a[2]=='\0')
+#define IS_NX_ARG(a) ((a[0]=='n' || a[0]=='N') && (a[1]=='x' || a[1]=='X') && a[2]=='\0')
+#define IS_XX_ARG(a) ((a[0]=='x' || a[0]=='X') && (a[1]=='x' || a[1]=='X') && a[2]=='\0')
+
+#define IS_EX_PX_ARG(a) (IS_EX_ARG(a) || IS_PX_ARG(a))
+#define IS_NX_XX_ARG(a) (IS_NX_ARG(a) || IS_XX_ARG(a))
+
+/* Given a string and length, validate a zRangeByLex argument.  The semantics
+ * here are that the argument must start with '(' or '[' or be just the char
+ * '+' or '-' */
+#define IS_LEX_ARG(s,l) \
+    (l>0 && (*s=='(' || *s=='[' || (l==1 && (*s=='+' || *s=='-'))))
+
 typedef enum {ATOMIC, MULTI, PIPELINE} redis_mode;
 
 typedef struct fold_item {
@@ -155,7 +211,10 @@ typedef struct {
     php_stream     *stream;
     char           *host;
     short          port;
+    char           *auth;
     double         timeout;
+    double         read_timeout;
+    long           retry_interval;
     int            failed;
     int            status;
     int            persistent;
@@ -177,6 +236,9 @@ typedef struct {
 
     char           *err;
     int            err_len;
+    zend_bool      lazy_connect;
+
+    int            scan;
 } RedisSock;
 /* }}} */
 
