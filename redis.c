@@ -59,13 +59,6 @@ zend_class_entry *spl_ce_RuntimeException = NULL;
 
 extern zend_function_entry redis_array_functions[];
 
-ZEND_DECLARE_MODULE_GLOBALS(redis)
-
-static void php_redis_init_globals(zend_redis_globals *redis_globals)
-{
-    redis_globals->use_ssl = 0;
-}
-
 PHP_INI_BEGIN()
 	/* redis arrays */
 	PHP_INI_ENTRY("redis.arrays.names", "", PHP_INI_ALL, NULL)
@@ -74,7 +67,7 @@ PHP_INI_BEGIN()
 	PHP_INI_ENTRY("redis.arrays.functions", "", PHP_INI_ALL, NULL)
 	PHP_INI_ENTRY("redis.arrays.index", "", PHP_INI_ALL, NULL)
 	PHP_INI_ENTRY("redis.arrays.autorehash", "", PHP_INI_ALL, NULL)
-	STD_PHP_INI_ENTRY("redis.use_ssl", "0", PHP_INI_ALL, OnUpdateBool, use_ssl, zend_redis_globals, redis_globals)
+	PHP_INI_ENTRY("redis.use_ssl", "0", PHP_INI_ALL, NULL)
 PHP_INI_END()
 
 /**
@@ -485,8 +478,6 @@ PHP_MINIT_FUNCTION(redis)
 	
 	REGISTER_INI_ENTRIES();
 	
-	ZEND_INIT_MODULE_GLOBALS(redis, php_redis_init_globals, NULL);
-	
 	/* Redis class */
 	INIT_CLASS_ENTRY(redis_class_entry, "Redis", redis_functions);
     redis_ce = zend_register_internal_class(&redis_class_entry TSRMLS_CC);
@@ -587,7 +578,7 @@ PHP_MINFO_FUNCTION(redis)
     php_info_print_table_start();
     php_info_print_table_header(2, "Redis Support", "enabled");
     php_info_print_table_row(2, "Redis Version", PHP_REDIS_VERSION);
-    php_info_print_table_row(2, "Use SSL", (REDIS_G(use_ssl) ? "True" : "False") );
+    php_info_print_table_row(2, "Use SSL", ( (INI_INT("redis.use_ssl") == 1) ? "True" : "False") );
     php_info_print_table_end();
 }
 

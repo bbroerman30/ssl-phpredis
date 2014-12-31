@@ -230,16 +230,6 @@ PHP_RINIT_FUNCTION(redis);
 PHP_RSHUTDOWN_FUNCTION(redis);
 PHP_MINFO_FUNCTION(redis);
 
-ZEND_BEGIN_MODULE_GLOBALS(redis)
-zend_bool use_ssl;
-ZEND_END_MODULE_GLOBALS(redis)
-
-#ifdef ZTS
-#define REDIS_G(v) TSRMG(redis_globals_id, zend_redis_globals *, v)
-#else
-#define REDIS_G(v) (redis_globals.v)
-#endif
-
 PHP_REDIS_API int redis_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent);
 PHP_REDIS_API void redis_atomic_increment(INTERNAL_FUNCTION_PARAMETERS, char *keyword, int count);
 PHP_REDIS_API int generic_multiple_args_cmd(INTERNAL_FUNCTION_PARAMETERS, char *keyword, int keyword_len,

@@ -45,8 +45,6 @@ extern zend_class_entry *redis_ce;
 extern zend_class_entry *redis_exception_ce;
 extern zend_class_entry *spl_ce_RuntimeException;
 
-ZEND_DECLARE_MODULE_GLOBALS(redis)
-
 /* Helper to reselect the proper DB number when we reconnect */
 static int reselect_db(RedisSock *redis_sock TSRMLS_DC) {
     char *cmd, *response;
@@ -1415,7 +1413,7 @@ PHP_REDIS_API int redis_sock_connect(RedisSock *redis_sock TSRMLS_DC)
 	        if( NULL != strstr("ssl://", redis_sock->host) ) {
 	          str_offset = 6;
 	        }
-	      } else if( REDIS_G(use_ssl) == 1 ) {
+	      } else if( INI_INT("redis.use_ssl") == 1 ) {
 	        use_ssl = 1;
 	      }
 
