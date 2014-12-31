@@ -122,6 +122,10 @@ extension=openssl.so
 
 Additionally, if you do not want to enable SSL globally, but on a per-connection basis, you can add ssl: or ssl:// to the beginning of the host name.
 
+NOTE:
+One thing to note: On PHP >= 5.6, PHP openssl has enabled CN validation by default, and I do not yet know how to properly turn that off here. SO, if you are enabling SSL on a server that has a certificate with a common name, you should use that fully qualified hostname in your connection string instead of using the IP address. If you use the IP address, it will fail CN validation.
+
+
 # Classes and methods
 -----
 
