@@ -68,6 +68,8 @@ PHP_INI_BEGIN()
 	PHP_INI_ENTRY("redis.arrays.index", "", PHP_INI_ALL, NULL)
 	PHP_INI_ENTRY("redis.arrays.autorehash", "", PHP_INI_ALL, NULL)
 	PHP_INI_ENTRY("redis.use_ssl", "0", PHP_INI_ALL, NULL)
+	PHP_INI_ENTRY("redis.ssl_peer_name", "", PHP_INI_ALL, NULL)
+	PHP_INI_ENTRY("redis.ssl_check_peer_name", "1", PHP_INI_ALL, NULL)
 PHP_INI_END()
 
 /**
@@ -579,6 +581,14 @@ PHP_MINFO_FUNCTION(redis)
     php_info_print_table_header(2, "Redis Support", "enabled");
     php_info_print_table_row(2, "Redis Version", PHP_REDIS_VERSION);
     php_info_print_table_row(2, "Use SSL", ( (INI_INT("redis.use_ssl") == 1) ? "True" : "False") );
+    if(INI_INT("redis.use_ssl") == 1) {
+        php_info_print_table_row(2, "SSL Validate Peer Name",  ( (INI_INT("redis.ssl_check_peer_name") == 1) ? "True" : "False")  );  
+      
+        if(INI_INT("redis.ssl_check_peer_name") == 1) {
+            php_info_print_table_row(2, "SSL Peer Name", ( (strlen(INI_STR("redis.ssl_peer_name")) > 0) ? INI_STR("redis.ssl_peer_name") : "") );
+        }
+    }
+
     php_info_print_table_end();
 }
 
