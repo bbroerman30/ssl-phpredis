@@ -1383,8 +1383,9 @@ PHP_REDIS_API int redis_sock_connect(RedisSock *redis_sock TSRMLS_DC)
     struct timeval tv, read_tv, *tv_ptr = NULL;
     char *host = NULL, *persistent_id = NULL, *errstr = NULL;
     int host_len, err = 0;
-	php_netstream_data_t *sock;
-	int tcp_flag = 1;
+    php_stream_context *context = NULL;
+    php_netstream_data_t *sock;
+    int tcp_flag = 1;
 
     if (redis_sock->stream != NULL) {
         redis_sock_disconnect(redis_sock TSRMLS_CC);
@@ -1422,6 +1423,22 @@ PHP_REDIS_API int redis_sock_connect(RedisSock *redis_sock TSRMLS_DC)
 	      } else {
 	    	host_len = spprintf(&host, 0, "%s:%d", redis_sock->host, redis_sock->port);
 	      }
+	      
+	      if( strlen(INI_STR( "redis.ssl_peer_name" )) > 0 || INI_INT("redis.ssl_check_peer_name") == 0 ) {
+                  context = php_stream_context_alloc();
+          
+                  if( INI_INT("redis.ssl_check_peer_name") == 0 ) {
+                      zval verify_peer_name_zval;
+                      ZVAL_FALSE(&verify_peer_name_zval);
+                      php_stream_context_set_option(context, "ssl", "verify_peer_name",&verify_peer_name_zval);
+                  }
+          
+                  if( strlen(INI_STR( "redis.ssl_peer_name" )) > 0 ) {
+                      zval cn_name_zval;
+                      ZVAL_STRING(&cn_name_zval,INI_STR( "redis.ssl_peer_name" ), 0);
+                      php_stream_context_set_option(context, "ssl", "peer_name",&cn_name_zval);
+                  }          
+	      }
     }
 
     if (redis_sock->persistent) {
@@ -1435,7 +1452,7 @@ PHP_REDIS_API int redis_sock_connect(RedisSock *redis_sock TSRMLS_DC)
     redis_sock->stream = php_stream_xport_create(host, host_len, ENFORCE_SAFE_MODE,
 							 STREAM_XPORT_CLIENT
 							 | STREAM_XPORT_CONNECT,
-							 persistent_id, tv_ptr, NULL, &errstr, &err
+							 persistent_id, tv_ptr, context, &errstr, &err
 							);
 
     if (persistent_id) {
