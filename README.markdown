@@ -113,14 +113,20 @@ extension=openssl.so
 
 There are several configuration options that may be set for SSL:
 
-redis.ssl_check_peer_name - If set to false, disables the peer name checking (CN validation, which is enabled by default in PHP >= 5.6)
-                            If true, validate against the ssl_peer_name specified below.
+redis.ssl_check_peer_name - If set to false, disables the peer name checking (CN validation, which is enabled by default in PHP >= 5.6) If true, validate against the ssl_peer_name specified below.
+
 redis.ssl_peer_name - If set, The peer name to validate the certificate against (since redis hosts are usually configured by IP address)
+
 redis.ssl_allow_self_signed - If set to true, allows self-signed certificates.
+
 redis.ssl_cafile - If set, Location of Certificate Authority file on local filesystem which should be used with the verify_peer context option to authenticate the identity of the remote peer.
+
 redis.ssl_capath - If set, If cafile is not specified or if the certificate is not found there, the directory pointed to by capath is searched for a suitable certificate. capath must be a correctly hashed certificate directory. 
+
 redis.ssl_verify_depth - If set, Abort if the certificate chain is too deep. Defaults to no verification.
+
 redis.ssl_ciphers - If set, Sets the list of available ciphers. The format of the string is described in [dedicated page](https://www.openssl.org/docs/manmaster/apps/ciphers.html#CIPHER_LIST_FORMAT). Defaults to DEFAULT. 
+
 redis.ssl_disable_compression - If set, disable TLS compression. This can help mitigate the CRIME attack vector.
 
 ## Building on Windows
