@@ -1693,9 +1693,9 @@ PHP_REDIS_API int redis_sock_connect(RedisSock *redis_sock TSRMLS_DC)
                 php_stream_context_set_option(context, "ssl", "disable_compression",&disable_compression_zval);
             }
 	      
-	          iif( strlen(INI_STR( "redis.ssl_verify_depth" )) > 0 ) {
+	          if( strlen(INI_STR( "redis.ssl_verify_depth" )) > 0 ) {
                 zval verify_depth_zval;
-                ZVAL_INT(&verify_depth_zval,INI_INT("redis.ssl_verify_depth"));
+                ZVAL_LONG(&verify_depth_zval,INI_INT("redis.ssl_verify_depth"));
                 php_stream_context_set_option(context, "ssl", "verify_depth",&verify_depth_zval);
             }
             
